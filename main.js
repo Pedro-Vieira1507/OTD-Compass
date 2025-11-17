@@ -17,6 +17,16 @@ function createWindow() {
     }
   });
 
+const { autoUpdater } = require("electron-updater");
+
+autoUpdater.on("update-downloaded", () => {
+  autoUpdater.quitAndInstall();
+});
+
+app.whenReady().then(() => {
+  autoUpdater.checkForUpdatesAndNotify();
+});
+
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'Dashboard.html'));
 
   // Abre DevTools apenas se precisar depurar:
