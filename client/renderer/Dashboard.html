@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dashboard de Pedidos</title>
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
+
+<style>
+/* ===== RESET & BASE ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: #f6f8fb; 
+    color: #333; 
+    display: flex; 
+    height: 100vh; 
+    overflow: hidden; 
+}
+
+/* ===== SIDEBAR ===== */
+.sidebar { 
+    width: 250px; 
+    background: linear-gradient(180deg, #1e3a8a 0%, #0f172a 100%); 
+    color: #fff; 
+    display: flex; 
+    flex-direction: column; 
+    padding: 25px 0; 
+    box-shadow: 3px 0 10px rgba(0,0,0,0.1); 
+}
+.sidebar h2 { 
+    font-family: 'Poppins', sans-serif; 
+    font-size: 24px; 
+    text-align: center; 
+    margin-bottom: 40px; 
+    font-weight: 600;
+}
+.sidebar nav { display: flex; flex-direction: column; gap: 10px; }
+.sidebar nav a { 
+    color: #cbd5e1; padding: 15px 25px; text-decoration: none; font-weight: 500; 
+    transition: 0.3s; display: flex; align-items: center; gap: 12px; font-size: 15px;
+}
+.sidebar nav a:hover { background: rgba(255,255,255,0.1); color: #fff; border-right: 4px solid #3b82f6; }
+.sidebar footer { margin-top: auto; padding: 20px; font-size: 12px; text-align: center; opacity: 0.6; }
+
+/* ===== MAIN ===== */
+.main { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+
+/* ===== TOPBAR ===== */
+.topbar { 
+    background: #fff; padding: 15px 30px; display: flex; justify-content: space-between; 
+    align-items: center; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 10; 
+}
+.topbar-left { display: flex; align-items: center; gap: 20px; flex-direction: row-reverse; }
+.topbar h1 { font-family: 'Poppins', sans-serif; color: #1e3a8a; font-size: 22px; margin-left: 20px; }
+#valorTotal { 
+    font-weight: 600; font-size: 15px; color: #1e3a8a; background: #e0e7ff; 
+    padding: 8px 16px; border-radius: 6px; border: 1px solid #c7d2fe;
+}
+
+/* ===== CONTENT & GRID ===== */
+.content { padding: 30px; overflow-y: auto; }
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 25px; align-items: start; }
+@media (min-width: 1400px) { .dashboard-grid { grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr) minmax(320px, 1fr); } }
+
+/* ===== CARDS ===== */
+.card { 
+    background: #fff; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.04); 
+    padding: 20px; transition: transform 0.2s ease, box-shadow 0.2s ease; margin-bottom: 20px; border: 1px solid #f1f5f9;
+}
+.card:hover { transform: translateY(-2px); box-shadow: 0 8px 15px rgba(0,0,0,0.08); }
+.card h3 { color: #1e3a8a; font-size: 16px; margin-bottom: 15px; font-weight: 600; }
+
+/* ===== CARD HEADER COM FILTROS (NOVO) ===== */
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.card-header h3 { margin-bottom: 0; white-space: nowrap; }
+.card-filters { display: flex; gap: 8px; }
+.filter-select, .filter-input {
+    padding: 5px 8px;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    font-size: 12px;
+    background: #fff;
+    color: #333;
+}
+.filter-input { width: 70px; } /* Largura pequena para o input de dias */
+
+/* ===== CHART FIX ===== */
+.chart-wrapper { position: relative; height: 250px; width: 100%; overflow: hidden; }
+
+/* ===== METRICS ===== */
+.metrics { display: flex; gap: 20px; margin-bottom: 20px; }
+.metrics .card { text-align: center; padding: 20px; flex: 1; margin-bottom: 0; }
+.metrics .card p { font-size: 32px; font-weight: bold; color: #1e3a8a; margin-top: 5px; }
+
+/* ===== LISTS ===== */
+#pedidoLista ul, #listaItensPedido { list-style: none; padding: 0; margin: 0; max-height: 280px; overflow-y: auto; }
+#pedidoLista li { 
+    padding: 12px 15px; margin-bottom: 8px; border-radius: 8px; background: #fff; 
+    font-weight: 500; color: #334155; border: 1px solid #e2e8f0; transition: all 0.2s; 
+    cursor: pointer; font-size: 14px;
+}
+#pedidoLista li:hover { background: #eff6ff; border-color: #3b82f6; color: #1e3a8a; }
+
+/* ===== LOG ===== */
+#logDash { 
+    background: #0f172a; color: #10b981; font-family: 'Courier New', monospace; 
+    font-size: 12px; padding: 15px; border-radius: 10px; height: 220px; 
+    overflow-y: auto; border: 1px solid #1e293b;
+}
+
+/* ===== OVERLAYS ===== */
+.overlay-container {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.6); z-index: 2000; justify-content: center; align-items: center; 
+    opacity: 0; transition: opacity 0.3s ease;
+}
+.overlay-content {
+    background: #fff; padding: 30px; border-radius: 14px; width: 90%; max-width: 700px; 
+    max-height: 90vh; overflow-y: auto; position: relative; transform: translateY(-50px); 
+    transition: transform 0.3s ease; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+.close-btn {
+    position: absolute; top: 15px; right: 15px; background: #fee2e2; color: #ef4444; 
+    border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; 
+    font-weight: bold; display: flex; justify-content: center; align-items: center; transition: 0.2s;
+}
+.close-btn:hover { background: #ef4444; color: #fff; }
+
+.btn-choose { 
+    background: #3b82f6; color: #fff; padding: 8px 16px; border-radius: 6px; border: none; 
+    cursor: pointer; font-weight: 500; transition: 0.2s; font-size: 13px;
+}
+.btn-choose:hover { background: #2563eb; }
+.btn-choose:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.upload-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+.status-pend { color: #ef4444; font-weight: 600; font-size: 13px; margin-left: 5px; }
+.status-ok { color: #10b981; font-weight: 600; font-size: 13px; margin-left: 5px; }
+.upload-msg { margin: 15px 0 5px 0; font-size: 14px; color: #475569; }
+
+/* ===== ESTILOS DA RECORRÊNCIA ===== */
+.kpi-row { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }
+.kpi-card { 
+    flex: 1; min-width: 150px; padding: 15px; border-radius: 8px; text-align: center; 
+    font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+.kpi-card strong { display: block; font-size: 20px; margin-bottom: 4px; }
+.kpi-green { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.kpi-blue  { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+.kpi-orange{ background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+
+.filter-bar {
+    display: flex; align-items: center; justify-content: space-between; background: #f8fafc;
+    padding: 10px 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px;
+    gap: 15px; flex-wrap: wrap;
+}
+.filter-group { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #475569; }
+.filter-group select { padding: 6px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+
+/* Switch Toggle */
+.toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #cbd5e1; transition: .4s; border-radius: 34px;
+}
+.slider:before {
+    position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+    background-color: white; transition: .4s; border-radius: 50%;
+}
+input:checked + .slider { background-color: #3b82f6; }
+input:checked + .slider:before { transform: translateX(18px); }
+
+#recorrenciaTable { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+#recorrenciaTable th, #recorrenciaTable td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+#recorrenciaTable th { background-color: #f8fafc; color: #1e3a8a; font-weight: 600; }
+#recorrenciaTable tr:hover { background-color: #f1f5f9; }
+
+/* Responsivo */
+@media (max-width: 1100px) {
+    .dashboard-grid { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .topbar-left { flex-direction: row; }
+}
+</style>
+</head>
+
+<body>
+
+  <aside class="sidebar">
+    <h2>Pedidos</h2>
+    <nav>
+      <a href="#" onclick="abrirOverlay('overlayImport'); return false;">
+        <span>📁</span> Importar Planilhas
+      </a>
+      <a href="#" onclick="abrirOverlayHistorico(); return false;">
+        <span>📋</span> Histórico
+      </a>
+      <a href="#" onclick="abrirOverlay('overlayFaturamento'); gerarGraficoFaturamento(); return false;">
+        <span>💰</span> Faturamento
+      </a>
+      <a href="#" onclick="abrirOverlayRecorrencia(); return false;">
+        <span>👥</span> Recorrência
+      </a>
+    </nav>
+    <footer>© 2025 Empresa XYZ</footer>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div id="valorTotal">Valor Total: R$ 0,00</div>
+      <div class="topbar-left">
+        <h1>Dashboard de Pedidos</h1>
+      </div>
+    </header>
+
+    <section class="content">
+      <div class="dashboard-grid">
+        
+        <div class="coluna">
+          <div id="pedidoLista" class="card">
+            <div class="card-header">
+                <h3>Pedidos</h3>
+                <div class="card-filters">
+                    <select id="filtroVelocidadeLista" class="filter-select" title="Filtrar por Velocidade">
+                        <option value="Todos">Todos</option>
+                        <option value="Rápido">Rápido</option>
+                        <option value="Médio">Médio</option>
+                        <option value="Lento">Lento</option>
+                    </select>
+                    <input type="number" id="filtroDiasLista" class="filter-input" placeholder="Dias..." title="Filtrar por quantidade exata de dias">
+                </div>
+            </div>
+            <ul id="listaPedidos"></ul>
+          </div>
+
+          <div id="itensPedido" class="card">
+            <h3>Itens no Pedido</h3>
+            <ul id="listaItensPedido">
+                <li style="text-align:center; color:#999; border:none; cursor:default;">Selecione um pedido acima</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="coluna">
+          <div class="metrics">
+            <div class="card">
+              <h3>Dias Médios</h3>
+              <p id="diasMedios">0.0</p>
+            </div>
+            <div class="card">
+              <h3>% no Prazo</h3>
+              <p id="pedidosNoPrazo">0%</p>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Velocidade de Entrega</h3>
+            <div class="chart-wrapper">
+                <canvas id="velocidadeChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="coluna">
+          <div id="logDash" class="card" style="padding:0;">
+            <div style="padding:15px; border-bottom:1px solid #1e293b; background:#020617; border-radius:10px 10px 0 0;">
+                <span style="color:#fff; font-weight:bold;">System Log</span>
+            </div>
+            <div id="logContent" style="padding:15px; white-space:pre-wrap;"></div>
+          </div>
+          <div class="card">
+            <h3>Análise Mês a Mês</h3>
+            <div class="chart-wrapper">
+                <canvas id="graficoMes"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <div id="overlayImport" class="overlay-container">
+    <div class="overlay-content">
+      <button class="close-btn" onclick="fecharOverlay('overlayImport')">✕</button>
+      <h3 style="margin-bottom:20px; color:#1e3a8a;">Etapa 1 — Inserir Planilhas</h3>
+      
+      <p class="upload-msg"><strong>1. Histórico de Vendas B.I por Nota</strong></p>
+      <div class="upload-row">
+          <label class="btn-choose" for="planilhaNota">Escolher arquivo</label>
+          <input type="file" id="planilhaNota" accept=".xlsx,.xls,.csv" style="display: none;" />
+          <button class="btn-choose" style="background:#64748b;" onclick="gerarModelo('nota')">Baixar Modelo</button>
+          <span id="statusNota" class="status-pend">❌ Pendente</span>
+      </div>
+
+      <p class="upload-msg"><strong>2. Histórico de Vendas B.I por Produto</strong></p>
+      <div class="upload-row">
+          <label class="btn-choose" for="planilhaProduto">Escolher arquivo</label>
+          <input type="file" id="planilhaProduto" accept=".xlsx,.xls,.csv" style="display: none;"/>
+          <button class="btn-choose" style="background:#64748b;" onclick="gerarModelo('produto')">Baixar Modelo</button>
+          <span id="statusProduto" class="status-pend">❌ Pendente</span>
+      </div>
+
+      <p class="upload-msg"><strong>3. Relatório de Produtos Site</strong></p>
+      <div class="upload-row">
+          <label class="btn-choose" for="planilhaSite">Escolher arquivo</label>
+          <input type="file" id="planilhaSite" accept=".xlsx,.xls,.csv" style="display: none;"/>
+          <button class="btn-choose" style="background:#64748b;" onclick="gerarModelo('site')">Baixar Modelo</button>
+          <span id="statusSite" class="status-pend">❌ Pendente</span>
+      </div>
+
+      <hr style="margin: 20px 0; border:0; border-top:1px solid #eee;" />
+      <button id="gerarAnalise" class="btn-choose" disabled style="width:100%; padding:12px; font-size:16px;">Gerar Dashboard</button>
+    </div>
+  </div>
+
+  <div id="overlayFaturamento" class="overlay-container">
+    <div class="overlay-content" style="max-width: 900px;">
+        <button class="close-btn" onclick="fecharOverlay('overlayFaturamento')">✕</button>
+        <h2 style="text-align:center; color:#1e3a8a; margin-bottom:20px;">Evolução do Faturamento</h2>
+        <div id="faturamentoInsight" style="display:none; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:20px; justify-content:space-between; align-items:center;">
+             <div id="insightMain" style="font-weight:700; color:#0f172a;">--</div>
+             <div id="insightDelta" style="font-weight:700;"></div>
+        </div>
+        <canvas id="graficoFaturamento"></canvas>
+    </div>
+  </div>
+  
+  <div id="overlayRecorrencia" class="overlay-container">
+    <div class="overlay-content" style="max-width: 800px;">
+        <button class="close-btn" onclick="fecharOverlay('overlayRecorrencia')">✕</button>
+        <h3 style="color:#1e3a8a; margin-bottom:15px;">👥 Análise de Recorrência de Clientes</h3>
+        <div style="background:#f0f9ff; padding:15px; border-radius:8px; border:1px solid #bae6fd; margin-bottom:20px;">
+          <p style="margin-bottom:10px; font-size:14px;">Importe uma planilha contendo as colunas <strong>Cliente</strong> e <strong>Valor</strong>.</p>
+          <div class="upload-row" style="margin-bottom:0;">
+              <label class="btn-choose" for="arquivoRecorrencia">Escolher Planilha</label>
+              <input type="file" id="arquivoRecorrencia" accept=".xlsx,.xls,.csv" style="display: none;">
+              <button class="btn-choose" onclick="processarPlanilhaRecorrencia()">Analisar Agora</button>
+          </div>
+        </div>
+        <div id="recorrenciaResultados" style="display:none;">
+            <div class="kpi-row">
+                <div class="kpi-card kpi-green"><strong id="kpiClientesUnicos">0</strong> Clientes Únicos</div>
+                <div class="kpi-card kpi-blue"><strong id="kpiRecorrentes">0</strong> Recorrentes (>1 pedido)</div>
+                <div class="kpi-card kpi-orange"><strong id="kpiTotalPedidos">0</strong> Total Pedidos Analisados</div>
+            </div>
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="checkApenasRecorrentes" onchange="renderizarTabelaRecorrencia()">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="checkApenasRecorrentes" style="cursor:pointer; font-weight:500;">Apenas Recorrentes</label>
+                </div>
+                <div class="filter-group">
+                    <label>Ordenar por:</label>
+                    <select id="selectOrdenacao" onchange="renderizarTabelaRecorrencia()">
+                        <option value="valor">💰 Maior Valor Gasto</option>
+                        <option value="pedidos">📦 Mais Pedidos</option>
+                    </select>
+                </div>
+            </div>
+            <div id="tabelaRecorrenciaWrapper"></div>
+        </div>
+        <div id="recorrenciaMsg"></div>
+    </div>
+  </div>
+
+  <div id="overlayHistorico" class="overlay-container">
+      <div class="overlay-content" style="max-width: 400px;">
+        <button class="close-btn" onclick="fecharOverlay('overlayHistorico')">✕</button>
+        <h3 style="color:#1e3a8a; margin-bottom:15px;">Histórico de Importações</h3>
+        <ul id="listaHistorico" style="list-style:none;"></ul>
+      </div>
+    </div>
+
+<script>
+/* ============================================================
+   VARIÁVEIS GLOBAIS
+   ============================================================ */
+const diasMediosEl = document.getElementById('diasMedios');
+const pedidosNoPrazoEl = document.getElementById('pedidosNoPrazo');
+const listaPedidosEl = document.getElementById('listaPedidos');
+const listaItens = document.getElementById('listaItensPedido');
+const logDashEl = document.getElementById('logContent');
+
+// Filtros da Lista de Pedidos
+const filtroVelocidadeEl = document.getElementById('filtroVelocidadeLista');
+const filtroDiasEl = document.getElementById('filtroDiasLista');
+
+let historico_por_nota = [];
+let historico_por_produto = [];
+let site = [];
+let produtosEnriquecidos = [];
+let pedidos = [];
+let pedidosOriginais = [];
+
+let graficoMes = null;
+let graficoFaturamento = null;
+let chartVelocidade = null;
+
+let historicoDashboards = JSON.parse(localStorage.getItem('historicoDashboards')||'[]');
+
+/* ============================================================
+   FUNÇÕES AUXILIARES
+   ============================================================ */
+function log(msg){
+    const time = new Date().toLocaleTimeString();
+    logDashEl.innerHTML += `[${time}] ${msg}\n`;
+    logDashEl.scrollTop = logDashEl.scrollHeight;
+}
+
+function base64ToArrayBuffer(base64){
+    if(!base64) return null;
+    const binary = atob(base64);
+    const buffer = new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++) buffer[i] = binary.charCodeAt(i);
+    return buffer;
+}
+
+function removeAccents(s){
+    return s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g,'') : s;
+}
+
+function normalizeStr(s){
+    return removeAccents(String(s||'')).trim().toLowerCase().replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ');
+}
+
+function formatCurrency(v){
+    return v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+}
+
+function parseMoneyRaw(v){
+    if(v === null || v === undefined) return 0;
+    const s = String(v).trim();
+    if(s === '') return 0;
+    let only = s.replace(/\s/g,'').replace(/[a-zA-Z$]/g,'');
+    if(only.includes(',') && !only.includes('.')) {
+        only = only.replace(',', '.');
+    } else if(only.includes('.') && only.includes(',')) {
+        if(only.indexOf('.') < only.indexOf(',')) {
+            only = only.replace(/\./g, '').replace(',', '.');
+        } else {
+            only = only.replace(/,/g, '');
+        }
+    }
+    return parseFloat(only) || 0;
+}
+
+function parseExcelDate(value){
+    if(!value && value !== 0) return null;
+    if(value instanceof Date) return value;
+    if(typeof value === 'number'){
+        return new Date(Math.round((value - 25569) * 86400 * 1000));
+    }
+    if(typeof value === 'string'){
+        const s = value.trim();
+        const parts = s.split('/');
+        if(parts.length===3){
+            const d = parseInt(parts[0],10), m = parseInt(parts[1],10)-1, y = parseInt(parts[2],10);
+            if(!isNaN(d) && !isNaN(m) && !isNaN(y)) return new Date(y,m,d);
+        }
+        const parsed = Date.parse(s);
+        if(!isNaN(parsed)) return new Date(parsed);
+    }
+    return null;
+}
+
+function calcularDias(emissao, saida) {
+    if (!emissao || !saida) return 0;
+    let diasUteis = 0;
+    let atual = new Date(emissao);
+    atual.setHours(0, 0, 0, 0);
+    saida.setHours(0, 0, 0, 0);
+    while (atual < saida) {
+        const diaSemana = atual.getDay();
+        if (diaSemana !== 0 && diaSemana !== 6) diasUteis++;
+        atual.setDate(atual.getDate() + 1);
+    }
+    return diasUteis;
+}
+
+/* ============================================================
+   HEADER MAPPING (MANTIDO)
+   ============================================================ */
+const headerCandidates = {
+  nota: ['nota','numero nota','nro nota','nota fiscal','nº nota','num nota'],
+  pedido_internet: ['pedido internet','pedido_internet','pedidointernet','pedido','pedido id','pedidoid'],
+  dt_emissao: ['dt emissao','data emissao','dt_emissao','data_emissao','data de emissao'],
+  dt_saida: ['dt saida','data saida','dt_saida','data_saida','data de saida'],
+  sku: ['sku','codigo','codigo sku','ref','cod'],
+  qtde: ['qtde','qtd','quantidade','quant'],
+  prazo_disponibilidade: ['prazo de disponibilidade','prazo','disponibilidade','prazo entrega']
+};
+
+function buildHeaderMap(rows){
+    const first = rows[0] || {};
+    const originalKeys = Object.keys(first);
+    const map = {};
+    for(const [canonical, variants] of Object.entries(headerCandidates)){
+        let found = null;
+        for(const orig of originalKeys){
+             if(variants.some(v => normalizeStr(orig) === normalizeStr(v))) {
+                 found = orig; break;
+             }
+        }
+        if(!found){
+            for(const orig of originalKeys){
+                const normOrig = normalizeStr(orig);
+                if(variants.some(v => normOrig.includes(normalizeStr(v)))) {
+                    found = orig; break;
+                }
+            }
+        }
+        if(found) map[canonical] = found;
+    }
+    return map;
+}
+
+function normalizeRows(rows){
+    const map = buildHeaderMap(rows);
+    return rows.map(r=>{
+        const nr = {};
+        for(const key in map){
+            nr[key] = r[map[key]];
+        }
+        nr._raw = r;
+        return nr;
+    });
+}
+
+/* ============================================================
+   PROCESSAMENTO E INTERFACE
+   ============================================================ */
+function atualizarValorTotal() {
+    let total = 0;
+    const possiveisColunas = ['total', 'valor', 'valor total', 'vlr total', 'liquido'];
+    historico_por_nota.forEach(r => {
+        let valRaw = 0;
+        if(r._raw) {
+            const keys = Object.keys(r._raw);
+            const keyFound = keys.find(k => possiveisColunas.some(p => normalizeStr(k) === p));
+            if(keyFound) valRaw = r._raw[keyFound];
+        }
+        const valor = parseMoneyRaw(valRaw);
+        if (!isNaN(valor)) total += valor;
+    });
+    document.getElementById("valorTotal").textContent = "Valor Total: " + formatCurrency(total);
+}
+
+function atualizarDash(){
+    if(!pedidos.length) return;
+    const total = pedidos.length;
+    const media = pedidos.reduce((a,b)=>a+b.dias,0) / total;
+    const noPrazo = pedidos.filter(p=>p.dias <= 5).length;
+    diasMediosEl.textContent = media.toFixed(1);
+    pedidosNoPrazoEl.textContent = ((noPrazo/total)*100).toFixed(0) + '%';
+    const counts = { 'Rápido':0, 'Médio':0, 'Lento':0 };
+    pedidos.forEach(p => counts[p.velocidade]++);
+    
+    // CHART JS CONFIG (Fixed Height)
+    const ctx = document.getElementById('velocidadeChart').getContext('2d');
+    if(chartVelocidade) chartVelocidade.destroy();
+    
+    chartVelocidade = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Rápido (≤3 dias)', 'Médio (4-7 dias)', 'Lento (>7 dias)'],
+            datasets: [{
+                data: [counts['Rápido'], counts['Médio'], counts['Lento']],
+                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true, 
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: { legend: { position: 'right', labels: { boxWidth: 10 } } }
+        }
+    });
+    atualizarLista();
+    atualizarAnaliseMensal();
+}
+
+/* --- ATUALIZAR LISTA COM FILTROS DE INPUT --- */
+// Listeners para atualizar lista em tempo real
+filtroVelocidadeEl.addEventListener('change', atualizarLista);
+filtroDiasEl.addEventListener('input', atualizarLista);
+
+function atualizarLista(){
+    listaPedidosEl.innerHTML='';
+    
+    // Obter valores dos filtros
+    const valVelocidade = filtroVelocidadeEl.value; // "Todos", "Rápido", ...
+    const valDias = parseInt(filtroDiasEl.value);   // Número ou NaN
+
+    // Filtrar a lista global
+    const listaFiltrada = pedidos.filter(p => {
+        // Filtro de Velocidade
+        const matchVel = (valVelocidade === 'Todos') || (p.velocidade === valVelocidade);
+        
+        // Filtro de Dias (Exato) - Se o input estiver vazio (NaN), ignora
+        const matchDias = isNaN(valDias) ? true : (p.dias === valDias);
+        
+        return matchVel && matchDias;
+    });
+
+    // Ordenar e Renderizar (Top 50)
+    const listaFinal = listaFiltrada.sort((a,b)=> b.dias - a.dias).slice(0, 50);
+
+    if(listaFinal.length === 0) {
+        listaPedidosEl.innerHTML = '<li style="text-align:center; color:#999; border:none; background:none;">Nenhum pedido encontrado.</li>';
+        return;
+    }
+
+    listaFinal.forEach(p=>{
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>#${p.id}</strong> <span style="float:right; color:${p.velocidade==='Rápido'?'#10b981':p.velocidade==='Médio'?'#f59e0b':'#ef4444'}">${p.dias} dias</span>`;
+        li.onclick = () => mostrarItens(p.id);
+        listaPedidosEl.appendChild(li);
+    });
+}
+
+function mostrarItens(pid){
+    listaItens.innerHTML = '';
+    const itens = produtosEnriquecidos.filter(p => String(p.pedido_internet).trim() === String(pid).trim());
+    itens.forEach(item => {
+        const li = document.createElement('li');
+        li.style.cursor = 'default';
+        li.innerHTML = `<div>${item.sku} <small>x${item.qtde}</small></div><div style="font-size:11px; color:#64748b;">Prazo: ${item.prazoDisponibilidade}</div>`;
+        listaItens.appendChild(li);
+    });
+}
+
+function atualizarAnaliseMensal(){
+    const agrupado = {};
+    pedidos.forEach(p => {
+        if(!p.dataSaida) return;
+        const key = `${p.dataSaida.getFullYear()}-${String(p.dataSaida.getMonth()+1).padStart(2,'0')}`;
+        if(!agrupado[key]) agrupado[key] = { soma:0, count:0 };
+        agrupado[key].soma += p.dias;
+        agrupado[key].count++;
+    });
+    const labels = Object.keys(agrupado).sort();
+    const data = labels.map(k => (agrupado[k].soma / agrupado[k].count).toFixed(1));
+    const ctx = document.getElementById('graficoMes').getContext('2d');
+    if(graficoMes) graficoMes.destroy();
+    
+    graficoMes = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{ label: 'Dias Médios de Entrega', data: data, backgroundColor: '#3b82f6', borderRadius: 4 }]
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false, 
+            scales: { y: { beginAtZero: true } }, 
+            plugins: { legend: { display: false } } 
+        }
+    });
+}
+
+/* ============================================================
+   OVERLAYS E BOTÕES (MANTIDO)
+   ============================================================ */
+function abrirOverlay(id) {
+    const el = document.getElementById(id);
+    el.style.display = 'flex';
+    setTimeout(() => { el.style.opacity = '1'; el.querySelector('.overlay-content').style.transform = 'translateY(0)'; }, 10);
+}
+function fecharOverlay(id) {
+    const el = document.getElementById(id);
+    el.style.opacity = '0'; el.querySelector('.overlay-content').style.transform = 'translateY(-50px)';
+    setTimeout(() => { el.style.display = 'none'; }, 300);
+}
+
+// Funções stub/dummy para overlays
+function abrirOverlayHistorico(){
+    // Implementação da tela de histórico aqui
+    abrirOverlay('overlayHistorico');
+}
+function gerarGraficoFaturamento(){
+    // Lógica de geração de gráfico de faturamento aqui
+}
+function abrirOverlayRecorrencia(){
+    // Implementação da tela de recorrência aqui
+    abrirOverlay('overlayRecorrencia');
+}
+function processarPlanilhaRecorrencia(){
+    // Lógica para processar planilha de recorrência aqui
+}
+function renderizarTabelaRecorrencia(){
+    // Lógica para renderizar tabela de recorrência aqui
+}
+function gerarModelo(modelType){
+    log(`Requisição para baixar modelo: ${modelType}`);
+    window.otdAPI.generateModel(modelType).then(r => {
+        log(r.message);
+    }).catch(e => log(`Erro ao gerar modelo: ${e.message}`));
+}
+
+
+/* ============================================================
+   LÓGICA DE UPLOAD E IPC (ATUALIZADA)
+   ============================================================ */
+const arquivos_upload = { nota: null, produto: null, site: null };
+const arquivosMap = { 
+    'planilhaNota': 'nota', 
+    'planilhaProduto': 'produto', 
+    'planilhaSite': 'site' 
+};
+
+// 1. Configura listeners para cada input de arquivo
+Object.keys(arquivosMap).forEach(id => {
+    document.getElementById(id).addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        const fileKey = arquivosMap[id];
+        const span = document.getElementById(`status${fileKey.charAt(0).toUpperCase()+fileKey.slice(1)}`);
+        
+        if (!file) {
+            arquivos_upload[fileKey] = null;
+            span.textContent = '❌ Pendente'; span.className = 'status-pend';
+            checarTodosArquivos();
+            return;
+        }
+
+        log(`Lendo arquivo: ${file.name} para a chave '${fileKey}'...`);
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            // Remove o prefixo Data URL para obter apenas o Base64
+            const base64Data = e.target.result.split(',')[1];
+            
+            // Envia o Base64 para o Main/Cache via IPC
+            window.otdAPI.processFile(fileKey, base64Data)
+                .then(response => {
+                    if (response.success) {
+                        arquivos_upload[fileKey] = file; // Marca como pronto
+                        span.textContent = '✅ Pronto'; 
+                        span.className = 'status-ok';
+                        log(`Arquivo '${fileKey}' enviado ao Core com sucesso.`);
+                    } else {
+                        span.textContent = '❌ Erro no envio'; 
+                        span.className = 'status-pend';
+                        log(`Erro no envio de '${fileKey}': ${response.message}`);
+                    }
+                    checarTodosArquivos();
+                })
+                .catch(err => {
+                    span.textContent = '❌ Erro IPC'; 
+                    span.className = 'status-pend';
+                    log(`Erro IPC ao enviar '${fileKey}': ${err.message}`);
+                    checarTodosArquivos();
+                });
+        };
+        reader.onerror = (e) => {
+            span.textContent = '❌ Erro de Leitura'; 
+            span.className = 'status-pend';
+            log(`Erro ao ler o arquivo '${fileKey}': ${e.target.error.name}`);
+            checarTodosArquivos();
+        };
+
+        reader.readAsDataURL(file);
+    });
+});
+
+// 2. Habilita o botão 'Gerar Dashboard'
+function checarTodosArquivos() {
+    const todosProntos = Object.values(arquivos_upload).every(a => a !== null);
+    document.getElementById('gerarAnalise').disabled = !todosProntos;
+}
+
+// 3. Dispara o Processamento Final no Core
+document.getElementById('gerarAnalise').addEventListener('click', () => {
+    fecharOverlay('overlayImport');
+    log("Iniciando análise no Core. Disparando handler 'start-processing'...");
+    
+    // Chama o novo handler IPC que dispara o cálculo no Main
+    window.otdAPI.startProcessing()
+        .then(response => {
+            if (response.success) {
+                log("Comando de Processamento recebido pelo Core. Aguardando resultados...");
+            } else {
+                log(`Erro ao iniciar processamento: ${response.message}`);
+            }
+        })
+        .catch(err => {
+            log(`Erro IPC ao iniciar processamento: ${err.message}`);
+        });
+});
+
+// 4. Recebimento de Dados do Core (Electron -> Renderer)
+window.otdAPI.onUpdateDashboard((event, data) => {
+    log(`Processamento concluído no Core. Sucesso: ${data.success}`);
+    
+    if (data.error) {
+        log(`ERRO FATAL: ${data.error}`);
+    } else if (data.success) {
+        // Recebe os dados limpos do Core (OTD_Calculator)
+        historico_por_nota = data.historico_por_nota || []; 
+        produtosEnriquecidos = data.produtosEnriquecidos || [];
+        pedidos = data.pedidos || [];
+        pedidosOriginais = [...pedidos]; // Clonar para os filtros
+        
+        log(`Total de pedidos processados: ${pedidos.length}`);
+        
+        // Atualiza a interface
+        atualizarValorTotal();
+        atualizarDash(); 
+    }
+});
+
+
+/* ============================================================
+   INICIALIZAÇÃO
+   ============================================================ */
+function initialize() {
+    log('Aplicação iniciada. Carregando dados persistidos...');
+    
+    // Tenta carregar dados salvos na inicialização
+    window.otdAPI.loadOtdData().then(data => {
+        if (data && data.pedidos && data.pedidos.length > 0) {
+            log('Dados persistidos carregados com sucesso. Restaurando Dashboard.');
+            
+            // Assume que loadOtdData retorna a mesma estrutura que o onUpdateDashboard
+            historico_por_nota = data.historico_por_nota || []; 
+            produtosEnriquecidos = data.produtosEnriquecidos || [];
+            pedidos = data.pedidos || [];
+            pedidosOriginais = [...pedidos];
+            
+            atualizarValorTotal();
+            atualizarDash(); 
+        } else {
+            log('Nenhum dado persistido encontrado. Aguardando importação.');
+        }
+    }).catch(e => {
+        log(`Erro ao carregar dados: ${e.message}`);
+        log('Verifique se o handler load-otd-data está implementado no Main.');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initialize);
+</script>
+
+</body>
+</html>
